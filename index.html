@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Park In / Park Out — Driving Simulator</title>
+<style>
+  :root{
+    --ink:#0e1116; --panel:#161b22; --line:#2c333d; --line2:#39424e;
+    --paint:#f2c14e; --tarmac:#20262e; --road:#262d36;
+    --good:#4caf7d; --bad:#e5533d; --text:#e7ebf0; --sub:#8f9aa8;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--ink);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:var(--text);}
+  body{display:flex;flex-direction:column;align-items:center;padding:18px 12px 34px;gap:14px;}
+  h1{font-size:19px;letter-spacing:.04em;margin:2px 0 0;font-weight:700;text-transform:uppercase;}
+  .sub{color:var(--sub);font-size:12.5px;margin:0 0 4px;text-align:center;max-width:560px;line-height:1.55;}
+  .sub b{color:var(--paint);}
+  .stage{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;max-width:960px;}
+  .layout{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;align-items:flex-start;width:100%;}
+  .wrap{position:relative;background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);flex:0 0 auto;}
+  canvas{display:block;border-radius:6px;background:var(--tarmac);touch-action:none;}
+  .hud{position:absolute;top:22px;left:22px;background:rgba(14,17,22,.72);border:1px solid var(--line2);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--sub);line-height:1.7;min-width:118px;backdrop-filter:blur(2px);}
+  .hud span{color:var(--text);font-variant-numeric:tabular-nums;font-weight:600;}
+  .msg{position:absolute;left:50%;top:14px;transform:translateX(-50%);padding:8px 18px;border-radius:20px;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;opacity:0;pointer-events:none;transition:opacity .18s ease;white-space:nowrap;}
+  .msg.show{opacity:1;}
+  .msg.bad{background:var(--bad);color:#fff;}
+  .msg.good{background:var(--good);color:#08211a;}
+  .msg.info{background:#3a4a63;color:#dce6f5;}
+
+  .side{display:flex;flex-direction:column;gap:12px;width:290px;max-width:92vw;}
+  .card{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:12px 14px;}
+  .card .title{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--paint);margin-bottom:9px;}
+
+  .segToggle{display:flex;background:var(--tarmac);border:1px solid var(--line2);border-radius:8px;overflow:hidden;margin-bottom:10px;}
+  .segToggle button{flex:1;padding:8px 6px;background:transparent;border:none;color:var(--sub);font-size:12px;font-weight:700;letter-spacing:.03em;cursor:pointer;text-transform:uppercase;}
+  .segToggle button.active{background:var(--paint);color:#1a1305;}
+
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+  .row button.action{flex:1;background:#252c35;border:1px solid var(--line2);color:var(--text);padding:9px 10px;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600;}
+  .row button.action:hover{border-color:var(--paint);color:var(--paint);}
+  .row button.play{background:var(--paint);color:#1a1305;border-color:var(--paint);}
+
+  .miniRow{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-bottom:3px;}
+  .miniRow span.val{color:var(--paint);font-weight:700;font-variant-numeric:tabular-nums;}
+  input[type=range]{width:100%;accent-color:var(--paint);height:14px;}
+  .status{font-size:11px;color:var(--sub);line-height:1.5;margin-top:4px;min-height:2.4em;}
+  .status.ok{color:var(--good);}
+  .status.fail{color:var(--bad);}
+
+  .dimGrid{display:grid;grid-template-columns:1fr;gap:10px;}
+  .dimRow label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--sub);margin-bottom:2px;}
+  .dimRow label span.val{color:var(--paint);font-weight:700;font-variant-numeric:tabular-nums;}
+  .dimRow .inputs{display:flex;align-items:center;gap:8px;}
+  .dimRow input[type=range]{flex:1;}
+  .dimRow input[type=number]{width:58px;background:var(--tarmac);border:1px solid var(--line2);color:var(--text);border-radius:6px;padding:4px 5px;font-size:11.5px;}
+  .calcNote{color:#6b7480;font-size:10.5px;margin-top:1px;}
+
+  .legend{display:flex;gap:14px;color:var(--sub);font-size:11.5px;flex-wrap:wrap;justify-content:center;max-width:560px;}
+  .legend b{color:var(--text);}
+</style>
+</head>
+<body>
+
+<h1>Park In / Park Out</h1>
+<p class="sub">Every dimension is adjustable. Front of the bay is blocked — the car must swing through the opening in the <b>left</b> wall to reach the road. Drive manually, or let the auto-pilot solve and play back the maneuver.</p>
+
+<div class="stage">
+  <div class="layout">
+    <div class="wrap">
+      <canvas id="c" width="460" height="720"></canvas>
+      <div class="hud">
+        Speed <span id="hudSpeed">0.0</span> m/s<br>
+        Gear <span id="hudGear">D</span><br>
+        Hits <span id="hudHits">0</span>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <div class="title">Mode</div>
+        <div class="segToggle">
+          <button id="modeOut" class="active">Park Out</button>
+          <button id="modeIn">Park In</button>
+        </div>
+        <div class="row">
+          <button class="action" id="resetBtn">Reset</button>
+          <button class="action play" id="playBtn">▶ Auto drive</button>
+        </div>
+        <div class="miniRow"><span>Playback speed</span><span class="val" id="speedVal">1.0×</span></div>
+        <input type="range" id="speedSlider" min="0.25" max="3" step="0.05" value="1">
+        <div class="miniRow" style="margin-top:8px;"><span>Progress</span><span class="val" id="progVal">0%</span></div>
+        <input type="range" id="progSlider" min="0" max="1000" step="1" value="0">
+        <div class="status" id="solveStatus">Solving maneuver…</div>
+      </div>
+
+      <div class="card">
+        <div class="title">Controls</div>
+        <p style="font-size:11.5px;color:var(--sub);line-height:1.6;margin:0;">
+          <b>Arrows / WASD</b> — steer &amp; throttle<br>
+          <b>Space</b> — brake<br>
+          Manual input pauses auto-drive.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="width:100%;max-width:960px;">
+    <div class="title">Dimensions (metres)</div>
+    <div class="dimGrid" id="dimGrid"></div>
+  </div>
+</div>
+
+<p class="legend">
+  <span>Walls solid black · dashed line = opening · dashed lane = road centreline</span>
+</p>
+
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const hudSpeed = document.getElementById('hudSpeed');
+  const hudGear = document.getElementById('hudGear');
+  const hudHits = document.getElementById('hudHits');
+  const msgEl = document.getElementById('msg');
+  const solveStatus = document.getElementById('solveStatus');
+
+  // ================= PARAMETERS =================
+  const PARAMS = {
+    BAY_W: 2.92, BAY_D: 6.0, CAR_W: 1.65, CAR_L: 4.0,
+    LEFT_GAP: 0.15, BACK_GAP: 0.2, OPENING: 3.65, ROAD_W: 3.0, WT: 0.15
+  };
+  const CONFIG = [
+    {key:'BAY_W',  label:'Bay width',  min:2.0, max:4.5, step:0.01},
+    {key:'BAY_D',  label:'Bay depth',  min:4.0, max:8.0, step:0.01},
+    {key:'CAR_W',  label:'Car width',  min:1.3, max:2.1, step:0.01},
+    {key:'CAR_L',  label:'Car length', min:3.0, max:5.5, step:0.01},
+    {key:'LEFT_GAP', label:'Left gap', min:0,   max:1.5, step:0.01},
+    {key:'BACK_GAP', label:'Back gap', min:0,   max:3.0, step:0.01},
+    {key:'OPENING',  label:'Opening',  min:0.5, max:8.0, step:0.01},
+    {key:'ROAD_W',   label:'Road width', min:2.0, max:5.0, step:0.01},
+    {key:'WT',       label:'Wall thickness', min:0.05, max:0.3, step:0.01},
+  ];
+
+  // derived / geometry state
+  let BAY_Y0, BAY_Y1, walls, roadYTop, roadYBot;
+  let parkedState, roadState;
+  let scale=60, originX=0, originY=0;
+
+  function clampParams(){
+    PARAMS.CAR_W = Math.min(PARAMS.CAR_W, PARAMS.BAY_W - 0.3);
+    PARAMS.CAR_L = Math.min(PARAMS.CAR_L, PARAMS.BAY_D - 0.3);
+    PARAMS.LEFT_GAP = Math.min(PARAMS.LEFT_GAP, Math.max(0, PARAMS.BAY_W - PARAMS.CAR_W));
+    PARAMS.BACK_GAP = Math.min(PARAMS.BACK_GAP, Math.max(0, PARAMS.BAY_D - PARAMS.CAR_L));
+    PARAMS.OPENING = Math.min(PARAMS.OPENING, PARAMS.BAY_D);
+  }
+
+  function buildGeometry(){
+    clampParams();
+    BAY_Y0 = -PARAMS.BAY_D/2;
+    BAY_Y1 = PARAMS.BAY_D/2;
+    const openY1 = BAY_Y0 + PARAMS.OPENING;
+    walls = [
+      {a:{x:0,y:BAY_Y0}, b:{x:PARAMS.BAY_W,y:BAY_Y0}, t:PARAMS.WT},          // front wall (blocked)
+      {a:{x:PARAMS.BAY_W,y:BAY_Y0}, b:{x:PARAMS.BAY_W,y:BAY_Y1}, t:PARAMS.WT}, // right wall
+      {a:{x:PARAMS.BAY_W,y:BAY_Y1}, b:{x:0,y:BAY_Y1}, t:PARAMS.WT},          // back wall
+    ];
+    if(openY1 < BAY_Y1 - 1e-6){
+      walls.push({a:{x:0,y:openY1}, b:{x:0,y:BAY_Y1}, t:PARAMS.WT});         // left wall lower closed section
+    }
+    const margin = Math.max(PARAMS.CAR_L*1.4, 4.5);
+    roadYTop = BAY_Y0 - margin;
+    roadYBot = BAY_Y1 + margin;
+
+    parkedState = {
+      x: PARAMS.LEFT_GAP + PARAMS.CAR_W/2,
+      y: BAY_Y1 - PARAMS.BACK_GAP - PARAMS.CAR_L/2,
+      phi: 0
+    };
+    roadState = { x: -PARAMS.ROAD_W/2, y: BAY_Y0 + Math.min(PARAMS.OPENING,PARAMS.BAY_D)/2, phi: 0 };
+    WHEELBASE = PARAMS.CAR_L*0.62;
+  }
+
+  function fitView(){
+    const sceneMinX = -PARAMS.ROAD_W - 0.6;
+    const sceneMaxX = PARAMS.BAY_W + 1.3;
+    const sceneMinY = roadYTop - 0.6;
+    const sceneMaxY = roadYBot + 0.6;
+    const w = sceneMaxX - sceneMinX, h = sceneMaxY - sceneMinY;
+    const sx = canvas.width / w, sy = canvas.height / h;
+    scale = Math.min(sx, sy) * 0.96;
+    const contentW = w*scale, contentH = h*scale;
+    const offX = (canvas.width - contentW)/2, offY = (canvas.height - contentH)/2;
+    originX = offX - sceneMinX*scale;
+    originY = offY - sceneMinY*scale;
+  }
+  function toPx(p){ return {x: originX + p.x*scale, y: originY + p.y*scale}; }
+
+  // ================= CAR / COLLISION =================
+  function rotAxes(phi){ return { fwd:{x:Math.sin(phi), y:-Math.cos(phi)}, right:{x:Math.cos(phi), y:Math.sin(phi)} }; }
+  function carCorners(s){
+    const {fwd,right} = rotAxes(s.phi);
+    const hw = PARAMS.CAR_W/2, hl = PARAMS.CAR_L/2;
+    const mk=(sw,sl)=>({ x: s.x + right.x*hw*sw + fwd.x*hl*sl, y: s.y + right.y*hw*sw + fwd.y*hl*sl });
+    return [mk(-1,1),mk(1,1),mk(1,-1),mk(-1,-1)];
+  }
+  function wallCorners(w){
+    const dx=w.b.x-w.a.x, dy=w.b.y-w.a.y, len=Math.hypot(dx,dy)||1;
+    const nx=-dy/len*w.t/2, ny=dx/len*w.t/2;
+    return [{x:w.a.x+nx,y:w.a.y+ny},{x:w.b.x+nx,y:w.b.y+ny},{x:w.b.x-nx,y:w.b.y-ny},{x:w.a.x-nx,y:w.a.y-ny}];
+  }
+  function satOverlap(polyA,polyB){
+    for(const poly of [polyA,polyB]){
+      for(let i=0;i<poly.length;i++){
+        const p1=poly[i], p2=poly[(i+1)%poly.length];
+        const axis={x:-(p2.y-p1.y), y:(p2.x-p1.x)};
+        const len=Math.hypot(axis.x,axis.y)||1; axis.x/=len; axis.y/=len;
+        let minA=Infinity,maxA=-Infinity,minB=Infinity,maxB=-Infinity;
+        for(const p of polyA){ const pr=p.x*axis.x+p.y*axis.y; minA=Math.min(minA,pr); maxA=Math.max(maxA,pr); }
+        for(const p of polyB){ const pr=p.x*axis.x+p.y*axis.y; minB=Math.min(minB,pr); maxB=Math.max(maxB,pr); }
+        if(maxA<minB || maxB<minA) return false;
+      }
+    }
+    return true;
+  }
+  function collidesAt(s){
+    const cc = carCorners(s);
+    for(const w of walls){ if(satOverlap(cc,wallCorners(w))) return true; }
+    return false;
+  }
+  function isClear(s){ return carCorners(s).every(p=>p.x < -0.1); }
+
+  // ================= LIVE (manual) CAR STATE =================
+  const MAXV=3.6, ACC=3.2, BRAKE=6.5, FRICTION=2.0, MAXSTEER=0.62, STEERSPD=2.8, STEERRETURN=3.2;
+  const SOLVER_MAXSTEER=0.85; // auto-pilot is allowed a tighter lock than manual driving
+  let WHEELBASE=2.6;
+  let car, hits, finished, crashedFlash=0;
+  let mode = 'out'; // 'out' or 'in'
+  let traj = null, trajOk = false;
+  let playing = false, playT = 0, playDir = 1;
+
+  function liveReset(){
+    playing=false;
+    car = mode==='out' ? {...parkedState, v:0, delta:0} : {...roadState, v:0, delta:0};
+    playT = mode==='out' ? 0 : (traj ? traj[traj.length-1].t : 0);
+    hits=0; finished=false; crashedFlash=0;
+    hideMsg(); hudHits.textContent=hits;
+    updateProgUI();
+  }
+
+  function hideMsg(){ msgEl.className='msg'; }
+  function showMsg(text,kind){ msgEl.textContent=text; msgEl.className='msg show '+kind; }
+
+  // ================= SOLVER (bang-bang shunt heuristic) =================
+  function integrateState(s, v, delta, dt){
+    let phi = s.phi;
+    if(Math.abs(v)>0.001) phi += (v/WHEELBASE)*Math.tan(delta)*dt;
+    return { x: s.x + Math.sin(phi)*v*dt, y: s.y - Math.cos(phi)*v*dt, phi };
+  }
+
+  function attemptSolve(){
+    const dt = 0.05, SPEED = 1.0, EXT_T = 0.5;
+    const steerLevels = [-1,-0.5,0,0.5,1].map(f=>f*SOLVER_MAXSTEER);
+    const actions = [];
+    for(const v of [SPEED,-SPEED]) for(const d of steerLevels) actions.push({v,d});
+
+    const start = {x:parkedState.x, y:parkedState.y, phi:0, parent:-1, seg:null};
+    const nodes = [start];
+    if(isClear(start)) return finish(nodes, 0);
+
+    const sceneMinX = -PARAMS.ROAD_W - 0.3, sceneMaxX = PARAMS.BAY_W + 0.3;
+    const sceneMinY = BAY_Y0 - Math.max(PARAMS.CAR_L*1.2,4), sceneMaxY = BAY_Y1 + Math.max(PARAMS.CAR_L*1.2,4);
+
+    function angDiff(a,b){ let d=(a-b)%(2*Math.PI); if(d>Math.PI)d-=2*Math.PI; if(d<-Math.PI)d+=2*Math.PI; return d; }
+    function distTo(s,sample){ return Math.hypot(s.x-sample.x, s.y-sample.y) + 0.4*Math.abs(angDiff(s.phi,sample.phi)); }
+    function sample(){
+      if(Math.random()<0.18){
+        return { x: sceneMinX + Math.random()*(-0.2-sceneMinX), y: sceneMinY + Math.random()*(sceneMaxY-sceneMinY), phi: (Math.random()*2-1)*Math.PI };
+      }
+      return { x: sceneMinX + Math.random()*(sceneMaxX-sceneMinX), y: sceneMinY + Math.random()*(sceneMaxY-sceneMinY), phi: (Math.random()*2-1)*Math.PI };
+    }
+
+    const maxNodes = 3500;
+    let goalNodeIdx = -1;
+    for(let iter=0; iter<maxNodes && goalNodeIdx<0; iter++){
+      const samp = sample();
+      let nearestIdx=0, nearestD=Infinity;
+      for(let i=0;i<nodes.length;i++){ const d=distTo(nodes[i],samp); if(d<nearestD){nearestD=d; nearestIdx=i;} }
+      const base = nodes[nearestIdx];
+      let bestSeg=null, bestEnd=null, bestD=Infinity;
+      for(const act of actions){
+        let s = {x:base.x,y:base.y,phi:base.phi};
+        const seg=[]; let travelled=0;
+        for(let k=0;k<Math.round(EXT_T/dt);k++){
+          const ns = integrateState(s, act.v, act.d, dt);
+          if(collidesAt(ns)) break;
+          s = ns; seg.push({x:s.x,y:s.y,phi:s.phi}); travelled++;
+        }
+        if(travelled===0) continue;
+        const d = distTo(s, samp);
+        if(d<bestD){ bestD=d; bestSeg=seg; bestEnd=s; }
+      }
+      if(!bestSeg) continue;
+      const newNode = {x:bestEnd.x,y:bestEnd.y,phi:bestEnd.phi, parent:nearestIdx, seg:bestSeg};
+      nodes.push(newNode);
+      if(isClear(newNode)) goalNodeIdx = nodes.length-1;
+    }
+    if(goalNodeIdx<0) return { frames:[{x:start.x,y:start.y,phi:start.phi,t:0}], success:false };
+    return finish(nodes, goalNodeIdx);
+
+    function finish(nodes, idx){
+      const chain=[]; let cur=idx;
+      while(cur>=0){ chain.push(nodes[cur]); cur=nodes[cur].parent; }
+      chain.reverse();
+      const frames=[{x:chain[0].x,y:chain[0].y,phi:chain[0].phi,t:0}];
+      let t=0;
+      for(let i=1;i<chain.length;i++){
+        for(const p of (chain[i].seg||[])){ t+=dt; frames.push({x:p.x,y:p.y,phi:p.phi,t}); }
+      }
+      return { frames, success:true };
+    }
+  }
+
+  function solveExitTrajectory(){
+    // a tight opening can occasionally need a second random attempt
+    let result = attemptSolve();
+    if(!result.success) result = attemptSolve();
+    return result;
+  }
+
+  function resolve(){
+    const result = solveExitTrajectory();
+    traj = result.frames; trajOk = result.success;
+    roadState = trajOk ? {x:traj[traj.length-1].x, y:traj[traj.length-1].y, phi:traj[traj.length-1].phi} : roadState;
+    if(trajOk){
+      solveStatus.textContent = 'Maneuver solved — ' + traj[traj.length-1].t.toFixed(1) + 's of driving.';
+      solveStatus.className='status ok';
+    } else {
+      solveStatus.textContent = 'No clear path found with these dimensions — widen the opening, narrow the car, or increase gaps.';
+      solveStatus.className='status fail';
+    }
+    progSlider.max = trajOk ? Math.round(traj[traj.length-1].t*1000) : 1000;
+    liveReset();
+  }
+
+  function sampleTraj(tVal){
+    if(!traj || traj.length<2) return {...parkedState};
+    tVal = Math.max(0, Math.min(traj[traj.length-1].t, tVal));
+    let lo=0, hi=traj.length-1;
+    while(lo<hi){ const mid=(lo+hi)>>1; if(traj[mid].t<tVal) lo=mid+1; else hi=mid; }
+    if(lo===0) return traj[0];
+    const a=traj[lo-1], b=traj[lo];
+    const f = (b.t-a.t)>1e-9 ? (tVal-a.t)/(b.t-a.t) : 0;
+    return { x:a.x+(b.x-a.x)*f, y:a.y+(b.y-a.y)*f, phi:a.phi+(b.phi-a.phi)*f };
+  }
+
+  // ================= INPUT =================
+  const keys = {};
+  const CTRL_KEYS = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','w','a','s','d'];
+  window.addEventListener('keydown', e=>{
+    if(CTRL_KEYS.includes(e.key)){ e.preventDefault(); if(playing){ playing=false; playBtn.textContent='▶ Auto drive'; } }
+    keys[e.key]=true;
+  });
+  window.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+  document.getElementById('resetBtn').addEventListener('click', liveReset);
+  const playBtn = document.getElementById('playBtn');
+  playBtn.addEventListener('click', ()=>{
+    if(!trajOk){ resolve(); if(!trajOk) return; }
+    playing = !playing;
+    playDir = mode==='out' ? 1 : -1;
+    playBtn.textContent = playing ? '⏸ Pause' : '▶ Auto drive';
+  });
+  const modeOutBtn = document.getElementById('modeOut');
+  const modeInBtn = document.getElementById('modeIn');
+  function setMode(m){
+    mode = m;
+    modeOutBtn.classList.toggle('active', m==='out');
+    modeInBtn.classList.toggle('active', m==='in');
+    playBtn.textContent = '▶ Auto drive';
+    liveReset();
+  }
+  modeOutBtn.addEventListener('click', ()=>setMode('out'));
+  modeInBtn.addEventListener('click', ()=>setMode('in'));
+
+  const speedSlider = document.getElementById('speedSlider');
+  const speedVal = document.getElementById('speedVal');
+  speedSlider.addEventListener('input', ()=>{ speedVal.textContent = parseFloat(speedSlider.value).toFixed(2)+'×'; });
+
+  const progSlider = document.getElementById('progSlider');
+  const progVal = document.getElementById('progVal');
+  let userScrubbing=false;
+  progSlider.addEventListener('mousedown', ()=>{userScrubbing=true; playing=false; playBtn.textContent='▶ Auto drive';});
+  progSlider.addEventListener('touchstart', ()=>{userScrubbing=true; playing=false; playBtn.textContent='▶ Auto drive';});
+  window.addEventListener('mouseup', ()=>{userScrubbing=false;});
+  window.addEventListener('touchend', ()=>{userScrubbing=false;});
+  progSlider.addEventListener('input', ()=>{
+    if(!trajOk) return;
+    const tv = parseFloat(progSlider.value)/1000;
+    const st = sampleTraj(tv);
+    car.x=st.x; car.y=st.y; car.phi=st.phi; car.v=0; car.delta=0;
+    playT = tv;
+    updateProgUI();
+  });
+  function updateProgUI(){
+    if(!trajOk){ progVal.textContent='—'; return; }
+    const total = traj[traj.length-1].t;
+    const pct = total>0 ? Math.round((playT/total)*100) : 0;
+    progVal.textContent = pct+'%';
+    if(!userScrubbing) progSlider.value = Math.round(playT*1000);
+  }
+
+  // ================= DIMENSION PANEL =================
+  const dimGrid = document.getElementById('dimGrid');
+  const controlsByKey = {};
+  CONFIG.forEach(cfg=>{
+    const row = document.createElement('div');
+    row.className='dimRow';
+    row.innerHTML =
+      '<label>'+cfg.label+' <span class="val" id="val_'+cfg.key+'">'+PARAMS[cfg.key].toFixed(2)+'</span></label>' +
+      '<div class="inputs">' +
+        '<input type="range" id="range_'+cfg.key+'" min="'+cfg.min+'" max="'+cfg.max+'" step="'+cfg.step+'" value="'+PARAMS[cfg.key]+'">' +
+        '<input type="number" id="num_'+cfg.key+'" min="'+cfg.min+'" max="'+cfg.max+'" step="'+cfg.step+'" value="'+PARAMS[cfg.key]+'">' +
+      '</div>' +
+      '<div class="calcNote" id="note_'+cfg.key+'"></div>';
+    dimGrid.appendChild(row);
+    controlsByKey[cfg.key] = {
+      range: row.querySelector('#range_'+cfg.key),
+      num: row.querySelector('#num_'+cfg.key),
+      val: row.querySelector('#val_'+cfg.key),
+      note: row.querySelector('#note_'+cfg.key)
+    };
+  });
+
+  function refreshDimUI(){
+    CONFIG.forEach(cfg=>{
+      const c = controlsByKey[cfg.key];
+      const v = PARAMS[cfg.key];
+      c.range.value = v; c.num.value = v.toFixed(2); c.val.textContent = v.toFixed(2);
+    });
+    controlsByKey.LEFT_GAP.range.max = Math.max(0, PARAMS.BAY_W - PARAMS.CAR_W);
+    controlsByKey.LEFT_GAP.num.max = controlsByKey.LEFT_GAP.range.max;
+    controlsByKey.BACK_GAP.range.max = Math.max(0, PARAMS.BAY_D - PARAMS.CAR_L);
+    controlsByKey.BACK_GAP.num.max = controlsByKey.BACK_GAP.range.max;
+    controlsByKey.OPENING.range.max = PARAMS.BAY_D;
+    controlsByKey.OPENING.num.max = PARAMS.BAY_D;
+    controlsByKey.LEFT_GAP.note.textContent = 'right gap ' + (PARAMS.BAY_W-PARAMS.CAR_W-PARAMS.LEFT_GAP).toFixed(2) + ' m';
+    controlsByKey.BACK_GAP.note.textContent = 'front gap ' + (PARAMS.BAY_D-PARAMS.CAR_L-PARAMS.BACK_GAP).toFixed(2) + ' m';
+  }
+
+  function onParamChange(key, value){
+    PARAMS[key] = value;
+    rebuildAll();
+  }
+  CONFIG.forEach(cfg=>{
+    const c = controlsByKey[cfg.key];
+    c.range.addEventListener('input', ()=> onParamChange(cfg.key, parseFloat(c.range.value)));
+    c.num.addEventListener('change', ()=> onParamChange(cfg.key, Math.max(cfg.min, Math.min(parseFloat(c.num.max||cfg.max), parseFloat(c.num.value)||0))));
+  });
+
+  function rebuildAll(){
+    buildGeometry();
+    fitView();
+    refreshDimUI();
+    playing=false; playBtn.textContent='▶ Auto drive';
+    solveStatus.textContent='Solving maneuver…'; solveStatus.className='status';
+    resolve();
+  }
+
+  // ================= PHYSICS STEP (manual) =================
+  function stepManual(dt){
+    if(playing) return;
+    const throttle = keys['ArrowUp']||keys['w'];
+    const reverse = keys['ArrowDown']||keys['s'];
+    const brakeKey = keys[' '];
+    const left = keys['ArrowLeft']||keys['a'];
+    const right = keys['ArrowRight']||keys['d'];
+
+    if(left && !right) car.delta = Math.max(-MAXSTEER, car.delta - STEERSPD*dt);
+    else if(right && !left) car.delta = Math.min(MAXSTEER, car.delta + STEERSPD*dt);
+    else{
+      if(car.delta>0) car.delta = Math.max(0, car.delta - STEERRETURN*dt);
+      else if(car.delta<0) car.delta = Math.min(0, car.delta + STEERRETURN*dt);
+    }
+    if(throttle) car.v = Math.min(MAXV, car.v + ACC*dt);
+    else if(reverse) car.v = Math.max(-MAXV*0.6, car.v - ACC*dt);
+    else if(brakeKey) car.v -= Math.sign(car.v)*Math.min(Math.abs(car.v), BRAKE*dt);
+    else{
+      const drop = FRICTION*dt;
+      if(car.v>0) car.v=Math.max(0,car.v-drop); else if(car.v<0) car.v=Math.min(0,car.v+drop);
+    }
+    const prev = {x:car.x,y:car.y,phi:car.phi};
+    if(Math.abs(car.v)>0.02) car.phi += (car.v/WHEELBASE)*Math.tan(car.delta)*dt;
+    car.x += Math.sin(car.phi)*car.v*dt;
+    car.y += -Math.cos(car.phi)*car.v*dt;
+
+    if(collidesAt(car)){
+      car.x=prev.x; car.y=prev.y; car.phi=prev.phi; car.v=0;
+      hits++; hudHits.textContent=hits; crashedFlash=0.35;
+      showMsg('Crash — reverse and try a different angle','bad');
+    } else if(crashedFlash<=0){ hideMsg(); }
+    if(crashedFlash>0) crashedFlash-=dt;
+
+    if(!finished){
+      if(mode==='out' && isClear(car)){ finished=true; showMsg('Nice driving — you\'re out on the road!','good'); }
+      if(mode==='in' && Math.hypot(car.x-parkedState.x,car.y-parkedState.y)<0.12 && Math.abs(((car.phi+Math.PI)%(2*Math.PI))-Math.PI)<0.12){
+        finished=true; showMsg('Parked!','good');
+      }
+    }
+  }
+
+  function stepAuto(dtReal){
+    if(!playing || !trajOk) return;
+    const speed = parseFloat(speedSlider.value);
+    playT += dtReal*speed*playDir;
+    const total = traj[traj.length-1].t;
+    if(playT>=total){ playT=total; playing=false; playBtn.textContent='▶ Auto drive'; showMsg('Nice driving — you\'re out on the road!','good'); }
+    if(playT<=0){ playT=0; playing=false; playBtn.textContent='▶ Auto drive'; showMsg('Parked!','good'); }
+    const st = sampleTraj(playT);
+    car.x=st.x; car.y=st.y; car.phi=st.phi; car.v=0; car.delta=0;
+    updateProgUI();
+  }
+
+  // ================= RENDER =================
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--tarmac');
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    const rTop = toPx({x:-PARAMS.ROAD_W, y:roadYTop});
+    const rBot = toPx({x:0, y:roadYBot});
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--road');
+    ctx.fillRect(rTop.x, rTop.y, rBot.x-rTop.x, rBot.y-rTop.y);
+    ctx.save();
+    ctx.strokeStyle='rgba(255,255,255,0.14)'; ctx.setLineDash([14,10]); ctx.lineWidth=2;
+    const laneX = toPx({x:-PARAMS.ROAD_W/2, y:0}).x;
+    ctx.beginPath(); ctx.moveTo(laneX, rTop.y); ctx.lineTo(laneX, rBot.y); ctx.stroke();
+    ctx.restore();
+
+    const bTop = toPx({x:0,y:BAY_Y0}), bBot = toPx({x:PARAMS.BAY_W,y:BAY_Y1});
+    ctx.fillStyle='rgba(255,255,255,0.03)';
+    ctx.fillRect(bTop.x,bTop.y,bBot.x-bTop.x,bBot.y-bTop.y);
+
+    ctx.fillStyle = '#0a0c0f';
+    for(const w of walls){
+      const c = wallCorners(w).map(toPx);
+      ctx.beginPath(); ctx.moveTo(c[0].x,c[0].y);
+      for(let i=1;i<c.length;i++) ctx.lineTo(c[i].x,c[i].y);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.save();
+    ctx.strokeStyle='rgba(242,193,78,0.6)'; ctx.setLineDash([6,6]); ctx.lineWidth=2;
+    let a=toPx({x:0,y:BAY_Y0}), b=toPx({x:0,y:BAY_Y0+PARAMS.OPENING});
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    ctx.restore();
+
+    if(traj && traj.length>1){
+      ctx.save();
+      ctx.strokeStyle='rgba(242,193,78,0.28)'; ctx.lineWidth=2; ctx.setLineDash([]);
+      ctx.beginPath();
+      traj.forEach((p,i)=>{ const px=toPx(p); if(i===0) ctx.moveTo(px.x,px.y); else ctx.lineTo(px.x,px.y); });
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawCar();
+
+    if(crashedFlash>0){
+      ctx.fillStyle='rgba(229,83,61,'+Math.min(0.25,crashedFlash*0.6)+')';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+  }
+  function drawCar(){
+    const center = toPx({x:car.x,y:car.y});
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(car.phi);
+    const w = PARAMS.CAR_W*scale, l = PARAMS.CAR_L*scale, r = Math.min(10, w*0.2);
+    ctx.fillStyle = '#e8ecf1';
+    roundRect(-w/2,-l/2,w,l,r); ctx.fill();
+    ctx.strokeStyle='#aab2bd'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle='#7c8794';
+    roundRect(-w/2+5,-l/2+8,w-10,l*0.26,6); ctx.fill();
+    roundRect(-w/2+5,l/2-l*0.28,w-10,l*0.2,6); ctx.fill();
+    ctx.fillStyle='#f2c14e';
+    ctx.beginPath(); ctx.moveTo(0,-l/2+2); ctx.lineTo(-6,-l/2+11); ctx.lineTo(6,-l/2+11); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath(); ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  }
+
+  // ================= LOOP =================
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.033, (now-last)/1000); last = now;
+    stepManual(dt);
+    stepAuto(dt);
+    draw();
+    hudSpeed.textContent = Math.abs(car.v||0).toFixed(1);
+    hudGear.textContent = playing ? (playDir>0?'AUTO ▶':'AUTO ◀') : (car.v>0.05?'D':(car.v<-0.05?'R':'N'));
+    requestAnimationFrame(loop);
+  }
+
+  refreshDimUI();
+  rebuildAll();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

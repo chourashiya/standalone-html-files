@@ -171,6 +171,7 @@
     const margin = Math.max(PARAMS.CAR_L*1.4, 4.5);
     roadYTop = BAY_Y0 - margin;
     roadYBot = BAY_Y1 + margin;
+    walls.push({a:{x:-PARAMS.ROAD_W,y:roadYTop}, b:{x:-PARAMS.ROAD_W,y:roadYBot}, t:PARAMS.WT}); // road outer edge (kerb)
 
     parkedState = {
       x: PARAMS.LEFT_GAP + PARAMS.CAR_W/2,
